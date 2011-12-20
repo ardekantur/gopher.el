@@ -1,0 +1,19 @@
+#+TITLE:       gopher.el authors
+#+AUTHOR:      Various
+#+DATE:        2011
+#+DESCRIPTION: Author credits for gopher.el, written for GNU Emacs
+
+Contributed some code? Step up and take credit! Please list
+your name and/or nick along with your email on your header
+line, a link to your repository (if applicable) and any
+supplementary information you'd care to share below.
+
+* Matthew Snyder (ardekantur) <matthew.c.snydere@gmail.com>
+
+  - [[http://github.com/ardekantur/gopher.el][ardekantur's repository]]
+  - Primary author
+
+* Ivy Foster (escondida, joyfulgirl) <joyfulgirl@archlinux.us>
+
+  - [[http://github.com/escondida/gopher.el][escondida's repository]]
+  - History support

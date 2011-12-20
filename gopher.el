@@ -16,6 +16,7 @@
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;; Author: Matthew Snyder <matthew.c.snydere@gmail.com>
+;;         and the gopher.el authors (see AUTHORS.org)
 ;; URL: http://github.com/ardekantur/gopher.el
 ;; Version: 0.0.1
 
@@ -28,8 +29,10 @@
 ;; "M-x gopher" prompts you for an address. <TAB> and <M-TAB> navigate
 ;; between links on a directory listing, while <[> and <]> navigate
 ;; between text documents. <RET> opens the link at the cursor's
-;; position. There's no history yet, but you can navigate upwards the
-;; directory tree with <u>.
+;; position. You can navigate up through the directory tree with <u>.
+;;
+;; There is primitive history support. <B> navigates backwards
+;; and <F> forwards through the history.
 
 (require 'cl)
 
@@ -53,6 +56,21 @@
 
 (defvar gopher-buffer-name "*gopher*")
 
+(defgroup gopher nil
+  "Gopher server navigation"
+  :group 'hypermedia)
+
+(defvar gopher-history-ring nil
+  "List of URLs visited in gopher.")
+
+(defvar gopher-history-ring-pointer nil
+  "The tail of the gopher history ring, whose car is the last page visited.")
+
+(defcustom gopher-history-ring-max 60
+  "Maximum length of gopher history ring before oldest elements are thrown away."
+  :type 'integer
+  :group 'gopher)
+
 (defun gopher-get-matching (function content-type)
   (let ((name (intern (concat "gopher-" function "-" (symbol-name content-type)))))
     (if (fboundp name)
@@ -61,7 +79,9 @@
 
 (defun gopher-refresh-current-address ()
   (interactive)
-  (apply 'gopher-goto-url gopher-current-address))
+  (gopher-goto-url (car gopher-current-address)
+                   (cadr gopher-current-address)
+                   nil nil t))
 
 (defun gopher-get-content-type (line-data)
   (let ((content-type (assoc (getf line-data :item-type) gopher-available-content-types)))
@@ -90,17 +110,19 @@
         (gopher-goto-url url nil)
       (gopher-goto-url url (concat "/" selector)))))
 
-(defun gopher-goto-url (&optional url selector content-type search-argument)
+(defun gopher-goto-url (&optional url selector content-type
+                                  search-argument no-history)
   (interactive)
   (if (get-buffer gopher-buffer-name)
       (kill-buffer gopher-buffer-name))
   (if (not content-type)
       (setq content-type 'directory-listing))
+  (unless no-history (gopher-history-new url selector))
   (setq gopher-network-args (append (list
-                                     :name "gopher" 
-                                     :buffer gopher-buffer-name 
-                                     :host url 
-                                     :service 70 
+                                     :name "gopher"
+                                     :buffer gopher-buffer-name
+                                     :host url
+                                     :service 70
                                      :filter (gopher-get-matching "filter" content-type)
                                      :sentinel (gopher-get-matching "sentinel" content-type))
                                     (gopher-get-extra-network-args content-type)))
@@ -114,7 +136,7 @@
    ((and selector search-argument) (format "%s\t%s\r\n" selector search-argument))
    (selector (format "%s\r\n" selector))
    (t "\r\n")))
-  
+
 (defun gopher-prepare-buffer (url selector)
   (set-window-buffer (selected-window) gopher-buffer-name)
   (with-current-buffer gopher-buffer-name
@@ -170,7 +192,7 @@
     (setq gopher-current-data (concat gopher-current-data string))))
 
 (defun gopher-display-line (line)
-  (if (or 
+  (if (or
        (zerop (length line))
        (string-match "^\.$" line))
       ""
@@ -181,7 +203,7 @@
 (defun gopher-format-line (line-data)
   (let ((content-type (gopher-get-content-type line-data)))
     (if (and content-type (gopher-get-face content-type))
-        (propertize (getf line-data :display-string) 
+        (propertize (getf line-data :display-string)
                     'face (gopher-get-face content-type))
       (getf line-data :display-string))))
 
@@ -285,6 +307,65 @@
      (while (not (eq ',content-type (gopher-get-content-type (text-properties-at (point)))))
        (,direction))))
 
+(defun gopher-history-current-item (n &optional do-not-move)
+  "Rotate the gopher history by N places, and then return that item.
+If N is zero, does nothing.
+
+If optional argument DO-NOT-MOVE is non-nil, don't actually
+move the remembered point in history, just navigate to that
+location."
+  (or gopher-history-ring (error "History list is empy."))
+  (let ((Nth-history-element
+         (nthcdr (mod (- n (length gopher-history-ring-pointer))
+                      (length gopher-history-ring))
+                 gopher-history-ring)))
+    (unless do-not-move
+      (setq gopher-history-ring-pointer Nth-history-element))
+    (car Nth-history-element)))
+
+(defun gopher-history-new (url selector &optional replace)
+  "Make (cons URL SELECTOR) the latest item in gopher's history.
+Set `gopher-history-ring-pointer' to point to it.
+Optional third argument REPLACE non-nil means that URL will
+replace the front of the history ring, rather than being
+added to the list."
+  (when (and (equal url (caar gopher-history-ring))
+             (equal selector (cdar gopher-history-ring)))
+    (setq replace t))
+  (let ((entry (cons url selector)))
+    (if (and replace gopher-history-ring)
+        (setcar gopher-history-ring entry)
+      (push entry gopher-history-ring)
+      (if (> (length gopher-history-ring)
+             gopher-history-ring-max)
+          (setcdr (nthcdr (1- gopher-history-ring-max)
+                          gopher-history-ring) nil)))
+    (setq gopher-history-ring-pointer gopher-history-ring)))
+
+(defun gopher-history (&optional step)
+  "Walk back through gopher's history.
+
+With optional argument STEP, an integer, go that many steps.
+If STEP is negative, move forward through the history."
+  (interactive "p")
+  (unless step (setq step 1))
+  (let ((current-item (gopher-history-current-item step)))
+    (gopher-goto-url (car current-item)
+                     (cdr current-item)
+                     nil nil t)))
+
+(defalias 'gopher-history-backwards 'gopher-history)
+
+(defun gopher-history-forward (&optional step)
+  "Walk forward through gopher's history.
+
+With optional argument STEP, an integer, go that many steps.
+If STEP is negative, move backward through the history"
+  (interactive "p")
+  (if step (setq step (* -1 step))
+    (setq step -1))
+  (gopher-history step))
+
 (defun gopher-define-keymaps ()
   (setq gopher-mode-map (make-sparse-keymap))
   (define-key gopher-mode-map "\r" 'gopher-goto-url-at-point)
@@ -297,6 +378,8 @@
   (define-key gopher-mode-map "[" (gopher-navigate previous-line plain-text))
   (define-key gopher-mode-map "u" 'gopher-goto-parent)
   (define-key gopher-mode-map "r" 'gopher-refresh-current-address)
+  (define-key gopher-mode-map "B" 'gopher-history-backwards)
+  (define-key gopher-mode-map "F" 'gopher-history-forward)
   (define-key gopher-mode-map "q" 'quit-window))
 
 (gopher-define-keymaps)
