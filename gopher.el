@@ -279,12 +279,17 @@
   (move-beginning-of-line nil)
   (let* ((properties (text-properties-at (point)))
         (content-type (gopher-get-content-type properties)))
-    (if (eq content-type 'search-query)
-        (call-interactively 'gopher-goto-search)
-      (gopher-goto-url (getf properties :hostname)
-                       (getf properties :port)
-                       (getf properties :selector)
-                       content-type))))
+    (cond ((eq content-type 'search-query)
+	   (call-interactively 'gopher-goto-search))
+	  ((eq content-type 'write)
+	   (gopher-goto-write (getf properties :hostname)
+			      (getf properties :port)
+			      (getf properties :selector)))
+	  (t
+	   (gopher-goto-url (getf properties :hostname)
+			    (getf properties :port)
+			    (getf properties :selector)
+			    content-type)))))
 
 (defun gopher-goto-parent (&optional arg)
   (interactive)
@@ -302,6 +307,27 @@
 		     (getf properties :port)
                      (getf properties :selector)
                      content-type search-argument)))
+
+(defun gopher-goto-write (hostname port selector)
+  (set-window-buffer (selected-window) (get-buffer-create gopher-buffer-name))
+  (setq buffer-read-only nil)
+  (erase-buffer)
+  (with-current-buffer gopher-buffer-name
+    (gopher-edit-mode)
+    (setq gopher-current-address (list hostname port selector))))
+
+(defun gopher-write ()
+  (interactive)
+  (let* ((address gopher-current-address)
+         (hostname (nth 0 address))
+         (port (nth 1 address))
+         (selector (concat (nth 2 address) "\r\n"
+			   (buffer-string))))
+    (gopher-goto-url hostname port selector nil nil t)))
+
+(define-derived-mode gopher-edit-mode text-mode "Gopher Edit"
+  (set (make-local-variable 'gopher-current-address) nil)
+  (local-set-key (kbd "C-c C-c") 'gopher-write))
 
 (define-derived-mode gopher-mode fundamental-mode "Gopher"
   (set (make-local-variable 'gopher-current-data) nil)

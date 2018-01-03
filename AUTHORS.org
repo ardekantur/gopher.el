@@ -22,3 +22,4 @@ supplementary information you'd care to share below.
 
   - [[https://github.com/kensanata/gopher.el][kensanata's repository]]
   - non-standard ports
+  - item type w (writing to gopher)
