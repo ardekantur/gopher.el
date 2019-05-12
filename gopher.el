@@ -38,7 +38,7 @@
 
 (require 'cl-lib)
 (require 'shr)
-(require 'w3m)
+(require 'w3m nil t); optional
 
 ;;; Code:
 
@@ -73,6 +73,13 @@ The CONTENT-TYPE t is the default when no match is found.")
 
 (defvar gopher-buffer-name "*gopher*")
 (defvar gopher-back-buffer-name "*gopher-back-buffer*")
+
+;; silence compiler warnings
+(defvar gopher-current-address)
+(defvar gopher-current-data)
+(defvar bookmark-make-record-function)
+(declare-function bookmark-prop-get "bookmark" (bookmark-name-or-record prop))
+(declare-function w3m-anchor (&optional position))
 
 (defgroup gopher nil
   "Gopher server navigation"
@@ -133,6 +140,10 @@ Function is either 'sentinel' or 'filter'."
         (gopher-goto-url hostname port nil)
       (gopher-goto-url hostname port selector))))
 
+(define-minor-mode gopher-tls-mode
+  "Toggle TLS for Gopher."
+  nil " TLS" :global t :require 'gopher)
+
 (defun gopher-goto-url (&optional hostname port selector content-type
                                   search-argument no-history)
   "Go to the URL described by the arguments.
@@ -165,10 +176,6 @@ is true, this URL is not added to the history stack."
      (error
       (message "failed to connect")
       (kill-buffer gopher-back-buffer-name)))))
-
-(define-minor-mode gopher-tls-mode
-  "Toggle TLS for Gopher."
-  nil " TLS" :global t :require 'gopher)
 
 (defun gopher-prepare-request (selector search-argument)
   "Construct a well-formed Gopher request from SELECTOR and SEARCH-ARGUMENT, if available."
@@ -406,6 +413,8 @@ Unreliable, e.g. foo.com:70/1/bar becomes foo.com:70/1/, which is useless."
 (defun gopher-open-w3m-url ()
   "Open this URL in Gopher."
   (interactive)
+  (unless (functionp 'w3m-anchor)
+    (error "You need to install the w3m package for this"))
   (gopher (w3m-anchor)))
 
 (defmacro gopher-navigate (content-type &optional reverse)
